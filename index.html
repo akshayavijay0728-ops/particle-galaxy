@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Particle Galaxy ✦</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital@0;1&family=Syne:wght@400;700&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #020008;
+      overflow: hidden;
+      font-family: 'Space Mono', monospace;
+      cursor: none;
+    }
+
+    canvas { display: block; }
+
+    #cursor {
+      position: fixed;
+      width: 18px; height: 18px;
+      border: 1.5px solid rgba(180, 140, 255, 0.9);
+      border-radius: 50%;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      transition: width 0.2s, height 0.2s, background 0.2s;
+      z-index: 100;
+    }
+    #cursor.clicking {
+      width: 28px; height: 28px;
+      background: rgba(180, 140, 255, 0.15);
+    }
+
+    #ui {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      padding: 28px 36px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    #title-block h1 {
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 22px;
+      letter-spacing: 0.08em;
+      color: rgba(255,255,255,0.92);
+    }
+    #title-block p {
+      font-size: 10px;
+      letter-spacing: 0.18em;
+      color: rgba(160, 120, 255, 0.7);
+      margin-top: 4px;
+      text-transform: uppercase;
+    }
+
+    #stats {
+      text-align: right;
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      color: rgba(255,255,255,0.3);
+      line-height: 2;
+    }
+    #stats span { color: rgba(180,140,255,0.7); }
+
+    #hint {
+      position: fixed;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      color: rgba(255,255,255,0.2);
+      text-transform: uppercase;
+      pointer-events: none;
+      animation: fadeHint 4s ease forwards;
+      animation-delay: 1s;
+      opacity: 0;
+    }
+    @keyframes fadeHint {
+      0%   { opacity: 0; }
+      20%  { opacity: 1; }
+      80%  { opacity: 1; }
+      100% { opacity: 0; }
+    }
+
+    #mode-badge {
+      position: fixed;
+      bottom: 32px;
+      right: 36px;
+      font-size: 10px;
+      letter-spacing: 0.15em;
+      color: rgba(180,140,255,0.5);
+      text-transform: uppercase;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+<div id="cursor"></div>
+
+<div id="ui">
+  <div id="title-block">
+    <h1>Particle Galaxy</h1>
+    <p>Interactive · Canvas · Vanilla JS</p>
+  </div>
+  <div id="stats">
+    Particles <span id="stat-count">0</span><br>
+    Mode <span id="stat-mode">ATTRACT</span>
+  </div>
+</div>
+
+<div id="hint">Move your mouse · Click to repel</div>
+<div id="mode-badge" id="mode-badge">Left click · attract &nbsp;|&nbsp; Right click · repel</div>
+
+<canvas id="c"></canvas>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const cursor = document.getElementById('cursor');
+const statCount = document.getElementById('stat-count');
+const statMode = document.getElementById('stat-mode');
+
+let W, H, particles = [], mouse = { x: -9999, y: -9999, down: false, repel: false };
+const NUM = 520;
+const COLORS = [
+  [180, 140, 255],
+  [120, 180, 255],
+  [255, 160, 200],
+  [140, 220, 255],
+  [200, 140, 255],
+];
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+
+class Particle {
+  constructor() { this.reset(true); }
+  reset(init) {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = Math.random() * Math.min(W, H) * 0.38 + 60;
+    this.ox = W / 2 + Math.cos(angle) * radius;
+    this.oy = H / 2 + Math.sin(angle) * radius * 0.42;
+    this.x = init ? this.ox : W / 2;
+    this.y = init ? this.oy : H / 2;
+    this.vx = 0; this.vy = 0;
+    this.size = Math.random() * 1.6 + 0.4;
+    this.color = COLORS[Math.floor(Math.random() * COLORS.length)];
+    this.alpha = Math.random() * 0.5 + 0.4;
+    this.speed = Math.random() * 0.004 + 0.001;
+    this.orbitAngle = angle;
+    this.orbitRadius = radius;
+    this.orbitTilt = 0.42 + Math.random() * 0.1;
+    this.twinkle = Math.random() * Math.PI * 2;
+    this.twinkleSpeed = Math.random() * 0.04 + 0.01;
+  }
+  update() {
+    this.orbitAngle += this.speed;
+    this.twinkle += this.twinkleSpeed;
+    const tx = W / 2 + Math.cos(this.orbitAngle) * this.orbitRadius;
+    const ty = H / 2 + Math.sin(this.orbitAngle) * this.orbitRadius * this.orbitTilt;
+
+    const dx = mouse.x - this.x;
+    const dy = mouse.y - this.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    const influence = Math.max(0, 1 - dist / 200);
+    const force = influence * (mouse.repel ? -2.8 : 1.8);
+
+    if (dist < 200 && mouse.down) {
+      this.vx += (dx / dist) * force * 0.3;
+      this.vy += (dy / dist) * force * 0.3;
+    } else if (dist < 160) {
+      this.vx += (dx / dist) * influence * 0.5;
+      this.vy += (dy / dist) * influence * 0.5;
+    }
+
+    this.vx += (tx - this.x) * 0.012;
+    this.vy += (ty - this.y) * 0.012;
+    this.vx *= 0.88; this.vy *= 0.88;
+    this.x += this.vx; this.y += this.vy;
+  }
+  draw() {
+    const a = this.alpha * (0.7 + 0.3 * Math.sin(this.twinkle));
+    const [r, g, b] = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
+    ctx.fill();
+
+    if (this.size > 1.2) {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size * 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${r},${g},${b},${a * 0.12})`;
+      ctx.fill();
+    }
+  }
+}
+
+function init() {
+  resize();
+  particles = Array.from({ length: NUM }, () => new Particle());
+  statCount.textContent = NUM;
+}
+
+function drawCenter() {
+  const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, 80);
+  grad.addColorStop(0, 'rgba(200,160,255,0.22)');
+  grad.addColorStop(0.4, 'rgba(140,100,255,0.06)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.beginPath();
+  ctx.arc(W/2, H/2, 80, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+}
+
+function loop() {
+  ctx.fillStyle = 'rgba(2,0,8,0.18)';
+  ctx.fillRect(0, 0, W, H);
+  drawCenter();
+  for (const p of particles) { p.update(); p.draw(); }
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('resize', () => { resize(); for (const p of particles) p.reset(true); });
+
+window.addEventListener('mousemove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY;
+  cursor.style.left = e.clientX + 'px';
+  cursor.style.top = e.clientY + 'px';
+});
+
+window.addEventListener('mousedown', e => {
+  mouse.down = true;
+  mouse.repel = e.button === 2;
+  cursor.classList.add('clicking');
+  statMode.textContent = mouse.repel ? 'REPEL' : 'ATTRACT';
+});
+
+window.addEventListener('mouseup', () => {
+  mouse.down = false;
+  cursor.classList.remove('clicking');
+  statMode.textContent = 'ORBIT';
+});
+
+window.addEventListener('contextmenu', e => e.preventDefault());
+
+window.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+  mouse.down = true;
+}, { passive: false });
+
+window.addEventListener('touchend', () => { mouse.down = false; });
+
+init();
+loop();
+</script>
+</body>
+</html>
